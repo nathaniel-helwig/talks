@@ -1,0 +1,820 @@
+---
+title: "Reproducible Data Wrangling and Modeling with R"
+author: "Nathaniel E. Helwig"
+date: "March 8, 2019"
+output: 
+  html_document:
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Citation:
+
+Helwig, N. E. (2019, Mar 8). Reproducible data wrangling and modeling with R. Department of Psychology Open and Reproducible Science Brown Bag Series. University of Minnesota. Obtained from http://users.stat.umn.edu/~helwig/talks/ReproducibleCode.html
+
+and
+
+Helwig, N. E., & Ruprecht, M. R. (2017). Age, gender, and self-esteem: a sociocultural look through a nonparametric lens. Archives of Scientific Psychology, 5(1), 19-31. doi: https://doi.org/10.1037/arc0000032
+
+Source code: http://users.stat.umn.edu/~helwig/talks/ReproducibleCode.Rmd
+
+# Introduction
+
+## Motivation
+Going from collected data to published paper often involves several steps that apply different "operations" to the data. Keeping a detailed record of each operation can be a daunting task---but is imperative for reproducible research. In this document, I demonstrate how the entire "data wrangling and modeling" process can be automated using reproducible R code. The ideas (and some R code) used in this demonstration have been adapted from Helwig and Ruprecht (2017). 
+
+## Why R?
+R is a **free** and **open-source** software environment for statistics, and is the *lingua franca* for statisticians and data scientists.
+
+* Free = installing and using R costs you nothing (i.e., no initial cost or yearly fee)
+
+* Open-source = the R source code is available to you (i.e., not a black box)
+
+
+R seamlessly documents each operation applied to a dataset, which makes reproducible research easy and enjoyable.
+
+* Customizable functions and scripts streamline process
+
+* Data processing, analysis, and reporting (all-in-one)
+
+
+Available from The R Project for Statistical Computing:
+http://www.r-project.org/
+
+## Overview
+To demonstrate the power of R for reproducible research, this document provides a fully worked example covering all aspects of the "wrangling and modeling" process. The demonstration will cover data processing and cleaning, data visualization, data tabulation (i.e., making tables), and data analysis. For each topic, I will provide reproducible code to conduct the "operation" and save (or export) the result. Aside from the Generalized Additive Models (GAMs) fit in Section 5.5, all of the "operations" conducted in this document are done using pure R, i.e., without any add-on packages. 
+
+# Data Loading and Preprocessing
+
+## Data Overview
+For the example, we will use the "RSE" (Rosenberg Self-Esteem) Data from http://openpsychometrics.org/_rawdata/RSE.zip
+
+Updated: 2/15/2014
+
+Number of Subjects: 47,974
+
+Number of Variables: 14
+
+The first 10 variables are the items of the RSE:
+
+* *Q1*: I feel that I am a person of worth, at least on an equal plane with others.
+* *Q2*: I feel that I have a number of good qualities.	
+* *Q3*: All in all, I am inclined to feel that I am a failure.	
+* *Q4*: I am able to do things as well as most other people.	
+* *Q5*: I feel I do not have much to be proud of.	
+* *Q6*: I take a positive attitude toward myself.	
+* *Q7*: On the whole, I am satisfied with myself.	
+* *Q8*: I wish I could have more respect for myself.	
+* *Q9*: I certainly feel useless at times.	
+* *Q10*: At times I think I am no good at all.
+
+From the helpfile, the dataset also contains...
+
+* *gender*: (1 = male, 2 = female, 3 = other; 0 = none chosen)
+* *age*: free response (0 = response that could not be converted to integer)
+* *source*: How the user came to the page (HTTP referer). 1 = front page of personality test website, 2 = Google search, 3 = other.
+* *country*: Inferred from technical information using MaxMind GeoLite.
+
+**Remark 1**: In the dataset helpfile, the levels of "gender" are *incorrectly* labeled (1 = male, 3 = female, 3 = other; 0 = none chosen).
+
+
+## Download Data
+The data are stored as a "data.csv" file, which is within the "RSE.zip" file linked above. 
+
+**Remark 2**: Although the file has a ".csv" extension, it is *not* a CSV (comma-separated values) file. In reality, it is a TSV (tab-separated values) file in disguise.
+
+First, we need to download and unzip the file. This can be done manually (boo!) or via reproducible R code (woo-hoo!).
+```{r download}
+# Step 1: define destination file (i.e., where to save the data)
+destfile <- paste0(getwd(), "/RSE.zip")
+
+# Step 2: download the data file (to the destination file)
+download.file(url = "http://openpsychometrics.org/_rawdata/RSE.zip",
+              destfile = destfile)
+
+# Step 3: unzip the "RSE.zip" file
+unzip(destfile)
+```
+Warning: the `unzip` function may not work on Windows machines.
+
+Next, we will load the data into R using the `read.table` function
+```{r readtable}
+datapath <- paste0(getwd(), "/RSE/data.csv")
+rse <- read.table(file = datapath, header = TRUE)
+```
+Note that the `header = TRUE` option is included because the "data.csv" file contains a header, i.e., variable names as the first row.
+
+
+## Look at the Data
+Let's take a look at the first 6 (by default) rows of data:
+```{r header}
+head(rse)
+```
+
+**Remark 3**: The numbers (on the left) are the rownames, which are *not* a part of the data.
+
+To confirm this, let's check the data dimensions:
+```{r dim}
+dim(rse)
+```
+We have 47,974 rows (subjects) and 14 columns (variables).
+
+
+## Recode the Missing Gender and Age
+From the data helpfile, we know missing values for *gender* and *age* are coded as 0.
+
+First, let's determine how many missing values we have for each variable:
+```{r missing.check}
+table(rse$gender)    # table all values
+sum(rse$age == 0)    # count number of zeros
+```
+
+We will recode the missing values as `NA` (Not Available), which is the "Missing Value" indicator in R.
+```{r missing.recode}
+# recode gender missing values
+indx <- which(rse$gender == 0)
+rse$gender[indx] <- NA
+
+# recode age missing values
+indx <- which(rse$age == 0)
+rse$age[indx] <- NA
+```
+
+## Recode the Missing RSE Items
+From the data helpfile, we know missing values for *Q1*--*Q10* are coded as 0. 
+
+To recode the missing values as `NA`, we can use a "for loop" to streamline the process
+```{r missing.rse}
+for(j in 1:10){
+  indx <- which(rse[,j] == 0)
+  rse[indx,j] <- NA
+}
+```
+Note that the for loop redefines the zeros as NA's for columns $j = 1, \ldots, 10$, which correspond to the RSE items *Q1*, ..., *Q10*.
+
+## Recode Levels of Gender
+From the helpfile, the *gender* variable is coded using integers (1 = male, 2 = female, 3 = other). Since R can handle factor variables (see `?factor`), we can recode the levels to be more intuitive.
+
+To recode the levels, we just need to redefine the factor:
+```{r gender.recode}
+rse$gender <- factor(rse$gender, levels = c(1, 2, 3),
+                     labels = c("male", "female", "other"))
+table(rse$gender)
+```
+Note that the 1's are now "male", the 2's are now "female", and the 3's are now "other". Also note that the missing data (i.e., `NA` values) are excluded from the table now.
+
+## Recode Negatively Worded RSE Items
+Note that five of the items of the RSE are worded in the negative direction, such that endorsement of the item indicates lower levels of self-esteem (i.e., items 3, 5, 8, 9, 10).
+
+The (non-missing) RSE items are coded with the integers 1 (= strongly disagree), 2 (= disagree), 3 (= agree), and 4 (= strongly agree).
+
+To recode the negatively worded items, we need to convert...
+
+* 1 (= strongly disagree) to 4 (= strongly agree)
+* 2 (= disagree) to 3 (= agree)
+* 3 (= agree) to 2 (= disagree)
+* 4 (= strongly agree) to 1 (= strongly disagree)
+
+Algebraically, this conversion can be represented as $$y = 5 - x$$ where $x$ is the negatively worded item and $y$ is the converted score.
+
+To implement this conversion in R, we just write out the algebraic equation:
+```{r negative.recode}
+indx <- c(3, 5, 8, 9, 10)
+rse[,indx] <- 5 - rse[,indx]
+```
+
+## Define RSE Total Score
+After the conversion, all of the items are worded in the positive direction. This makes it possible to define the RSE Total score, which is the summation of the 10 item scores.
+
+We can add the total score to our dataframe by applying the `rowSums` function to the first 10 columns of our dataframe:
+```{r rse.total}
+rse$total <- rowSums(rse[,1:10])
+head(rse)
+```
+Note that our dataframe now has 15 columns, with the total score appended at the end.
+
+## Check Age Range
+Before any analysis work, let's check the range of the ages
+```{r age.range}
+range(rse$age, na.rm = TRUE)
+```
+The minimum reported subject age is 1 (year old) and the maximum reported age is 2,147,483,647 (years old). It seems that we have some miscoded and/or corrupted data...
+
+To check the extent of the problem, let's look at the proportion of subjects with ages outside of the range 10 to 80 years old:
+```{r age.1080.prct}
+mean(rse$age < 10, na.rm = TRUE)
+mean(rse$age > 80, na.rm = TRUE)
+```
+Note that about 0.1% of the subjects have reported ages below 10 years old. Similarly, about 0.1% of the subjects have reported ages greater than 80 years old.
+
+## Subset Data: 10-80 year olds
+Let's subset the dataset to only include the 10-80 year old subjects:
+```{r subset}
+rse1080 <- subset(rse, age >= 10 & age <= 80)
+```
+
+Note that we have created a new dataset that contains only the subjects with ages in the range 10 to 80 years old:
+```{r subset.check}
+dim(rse1080)
+head(rse1080)
+range(rse1080$age, na.rm = TRUE)
+```
+
+## Remove Missing Data
+As a final preprocessing step, we will remove subjects who are missing data for the RSE total score, the gender, or the age.
+
+```{r missing.remove}
+navars <- c("gender", "age", "total")
+nacheck <- function(x) any(is.na(x))
+indx <- apply(rse1080[, navars], 1, nacheck)
+rse1080 <- rse1080[!indx,]
+nrow(rse1080)
+```
+
+
+
+
+# Data Visualization
+
+## Age by Gender
+Let's look at histograms of the ages:
+```{r hist.age}
+hist(rse1080$age, xlab = "Age",
+     main = "Histogram of Age")
+```
+
+Suppose that we want to look at separate histograms for each gender. To do this, we will first create an *indexing* vector for each gender:
+```{r }
+indxM <- which(rse1080$gender == "male")
+indxF <- which(rse1080$gender == "female")
+indxO <- which(rse1080$gender == "other")
+length(indxM) + length(indxF) + length(indxO)
+```
+
+Note that the vector `indxM` contains the row numbers corresponding to the male subjects, `indxF` contains the row numbers corresponding to the female subjects, and `indxO` contains the row numbers corresponding to the other subjects.
+
+Now we can plot separate histograms of age for each gender by indexing the appropriate elements of the `age` variable:
+```{r hist.age.gender, fig.width = 7.5, fig.height = 2.5}
+par(mfrow = c(1,3))
+hist(rse1080$age[indxM], xlab = "Age",
+     main = "Histogram of Age (males)", col = "blue")
+hist(rse1080$age[indxF], xlab = "Age",
+     main = "Histogram of Age  (females)", col = "red")
+hist(rse1080$age[indxO], xlab = "Age",
+     main = "Histogram of Age (other)", col = "purple")
+```
+
+To visualize all of the distributions together, we could use a kernel density estimate (KDE):
+```{r kde.age.gender}
+# KDE for males
+kde <- density(rse1080$age[indxM], na.rm = TRUE)
+plot(kde, xlab = "Age", ylab = "Density", 
+     main = "Kernel Density Estimates of Age by Gender",
+     col = "blue", lwd = 2, xlim = c(10, 80), ylim = c(0, 0.12))
+
+# KDE for females
+kde <- density(rse1080$age[indxF], na.rm = TRUE)
+lines(kde, col = "red", lty = 2, lwd = 2)
+
+# KDE for others
+kde <- density(rse1080$age[indxO], na.rm = TRUE)
+lines(kde, col = "purple", lty = 3, lwd = 2)
+
+# add legend
+legend("topright", legend = c("male", "female", "other"),
+       lty = 1:3, lwd = 2, col = c("blue", "red", "purple"), bty = "n")
+```
+
+Or maybe you would prefer a boxplot:
+```{r  boxplot.age.gender}
+boxplot(age ~ gender, data = rse1080, 
+        xlab = "Gender", ylab = "Age",
+        col = c("blue", "red", "purple"),
+        main = "Boxplots of Age by Gender")
+```
+
+
+## Self-Esteem by Gender
+Let's look at histograms of the self-esteem total score:
+```{r hist.total}
+hist(rse1080$total, xlab = "Self-Esteem",
+     main = "Histogram of Self-Esteem")
+```
+
+Or we could look at separate histograms of the total score for each gender:
+```{r hist.total.gender, fig.width = 7.5, fig.height = 2.5}
+par(mfrow = c(1,3))
+hist(rse1080$total[indxM], 
+     xlab = "Self-Esteem", col = "blue", 
+     main = "Histogram of Self-Esteem (males)")
+hist(rse1080$total[indxF], 
+     xlab = "Self-Esteem", col = "red", 
+     main = "Histogram of Self-Esteem (females)")
+hist(rse1080$total[indxO], 
+     xlab = "Self-Esteem", col = "purple", 
+     main = "Histogram of Self-Esteem (other)")
+```
+
+As before, we could use a KDE to visualize all of the distributions together:
+```{r kde.total.gender}
+# KDE for males
+kde <- density(rse1080$total[indxM], na.rm = TRUE)
+plot(kde, xlab = "Self-Esteem", ylab = "Density", 
+     main = "Kernel Density Estimates of Self-Esteem by Gender",
+     col = "blue", lwd = 2, xlim = c(10, 40), ylim = c(0, 0.06))
+
+# KDE for females
+kde <- density(rse1080$total[indxF], na.rm = TRUE)
+lines(kde, col = "red", lty = 2, lwd = 2)
+
+# KDE for others
+kde <- density(rse1080$total[indxO], na.rm = TRUE)
+lines(kde, col = "purple", lty = 3, lwd = 2)
+
+# add legend
+legend("topright", legend = c("male", "female", "other"),
+       lty = 1:3, lwd = 2, col = c("blue", "red", "purple"), bty = "n")
+```
+
+Or a boxplot would work too:
+```{r  boxplot.total.gender}
+boxplot(total ~ gender, data = rse1080, 
+        xlab = "Gender", ylab = "Self-Esteem",
+        col = c("blue", "red", "purple"),
+        main = "Boxplots of Self-Esteem by Gender")
+```
+
+
+
+## Self-Esteem by Age
+To visualize the relationship between self-esteem and age, we will use a smoothing spline, which is a type of nonparametric regression.
+
+First, we will fit a smoothing spline predicting self-esteem from age ignoring gender:
+```{r ssplot}
+ss <- with(rse1080, smooth.spline(age, total))
+plot(ss, t = "l", lwd = 2, ylim = c(20, 35),
+     xlab = "Age", ylab = "Self-Esteem", 
+     main = "Self-Esteem by Age")
+```
+
+## Self-Esteem by Age and Gender
+Next, we will fit a smoothing spline predicting self-esteem from age separately for each gender:
+```{r ssplot.gender}
+# smoothing spline for males
+ssM <- with(rse1080[indxM,], smooth.spline(age, total))
+plot(ssM, t = "l", ylim = c(15, 35), lwd = 2, col = "blue", 
+     xlab = "Age", ylab = "Self-Esteem", 
+     main = "Self-Esteem by Age and Gender")
+
+# smoothing spline for females
+ssF <- with(rse1080[indxF,], smooth.spline(age, total))
+lines(ssF, lty = 2, lwd = 2, col = "red")
+
+# smoothing spline for others
+ssO <- with(rse1080[indxO,], smooth.spline(age, total))
+lines(ssO, lty = 3, lwd = 2, col = "purple")
+
+# add legend
+legend("bottomright", legend = c("male", "female", "other"),
+       lty = 1:3, lwd = 2, col = c("blue", "red", "purple"), bty = "n")
+```
+
+
+
+# Data Tabulation
+
+## Table of Age by Gender
+For a publication, it may be necessary to summarize information in tables. As an example suppose that we want to create a table summarizing the mean and standard deviation of the ages for each gender.
+
+```{r  table.demo}
+# number of subjects for each gender
+nsubj <- with(rse1080, tapply(age, gender, length))
+
+# mean of age for each gender
+ageMN <- with(rse1080, tapply(age, gender, mean))
+
+# standard deviation of age for each gender
+ageSD <- with(rse1080, tapply(age, gender, sd))
+
+# combine (columnwise) into table
+tab.demo <- cbind(n = nsubj, Mean = ageMN, SD = ageSD)
+tab.demo
+```
+Now we have a table that we could easily output of R (e.g., via `write.csv`) and insert into some publication. For example...
+```{r write.table}
+write.csv(round(tab.demo, 2), file = paste0(getwd(), "/tab_demo.csv"))
+```
+Note that I used the `round` function to round the results to 2 decimal places, as is typically required for publications. 
+
+## Table of Self-Esteem by Gender
+Now suppose that we want to create a table summarizing gender differences in self-esteem. This can be done using (almost) the exact same code as before.
+
+```{r  table.self}
+# mean of total for each gender
+selfMN <- with(rse1080, tapply(total, gender, mean))
+
+# standard deviation of total for each gender
+selfSD <- with(rse1080, tapply(total, gender, sd))
+
+# combine (columnwise) into table
+tab.self <- cbind(n = nsubj, Mean = selfMN, SD = selfSD)
+
+# write and print
+write.csv(round(tab.self, 2), file = paste0(getwd(), "/tab_self.csv"))
+round(tab.self, 2)
+```
+
+## Combining Tables
+To save some space, we can combine the previous results into a single table
+```{r table.combine}
+tab.comb <- cbind(tab.demo, tab.self[,-1])
+colnames(tab.comb) <- c("n", "Age.MN", "Age.SD", 
+                        "SelfEsteem.MN", "SelfEsteem.SD")
+write.csv(round(tab.comb, 2), file = paste0(getwd(), "/tab_comb.csv"))
+round(tab.comb, 2)
+```
+
+## Bin Data by Age
+Suppose that we want to calculate the summary statistics separately for different age groups. 
+
+Consider binning the ages into 9 different groups: 10-12, 13-17, 18-22, 23-29, 30-39, 40-49, 50-59, 60-69, 70-80.
+
+As a first step, we need to define the "age bin" variable. This involves defining the "breaks" that specify the bin limits, and looping through each bin's break values to find the ages within the bin.
+```{r age.bin}
+binlab <- c("10-12", "13-17", "18-22", "23-29",
+            "30-39", "40-49", "50-59", "60-69", "70-80")
+breaks <- c(0, 12, 17, 22, 29, 39, 49, 59, 69, 80)
+agebin <- rep(0, nrow(rse1080))
+for(j in 2:length(breaks)){
+  indx <- with(rse1080, which(age <= breaks[j] & age > breaks[j-1]))
+  agebin[indx] <- j - 1
+}
+table(agebin)
+```
+
+Let's check to make sure that the binning worked:
+```{r age.bin.check}
+nrow(rse1080)
+sum(table(agebin))
+```
+Ok, good: each subject is only in 1 bin, which is what we want.
+
+
+## Table Self-Esteem by Age
+Now we can table the results by (binned) age via an extension of our previous code
+```{r table.self.age}
+# number of subjects for each gender*age
+nsubj <- with(rse1080, tapply(total, agebin, length))
+
+# mean of total for each gender*age
+selfbinMN <- with(rse1080, tapply(total, agebin, mean))
+
+# standard deviation of total for each gender*age
+selfbinSD <- with(rse1080, tapply(total, agebin, sd))
+
+# combine (rowwise)
+tab.bin <- rbind(Mean = selfbinMN, SD = selfbinSD, N = nsubj)
+colnames(tab.bin) <- binlab
+
+# write and print
+write.csv(round(tab.bin, 2), file = paste0(getwd(), "/tab_abin.csv"))
+round(tab.bin, 1)
+```
+
+Note that we can (and should!) plot the results in the table to confirm things look reasonable
+```{r plot.table.self.age}
+agebrk <- c(10, 12, 17, 22, 29, 39, 49, 59, 69, 80)
+agemid <- agebrk[1:9] + (agebrk[2:10] - agebrk[1:9])/2
+plot(agemid, tab.bin[1,], t = "b", lwd = 2, 
+     pch = 0, col = "black",
+     xlim = c(10, 80), ylim = c(20, 35), 
+     xlab = "Age", ylab = "Self-Esteem",
+     main = "Average Self-Esteem by (Binned) Age")
+```
+
+If we want to get fancy, we could add 95% confidence intervals at each point:
+```{r ci.table.self.age}
+plot(agemid, tab.bin[1,], t = "b", lwd = 2, 
+     pch = 0, col = "black",
+     xlim = c(10, 80), ylim = c(20, 35), 
+     xlab = "Age", ylab = "Self-Esteem",
+     main = "Average Self-Esteem by (Binned) Age with 95% CI")
+stderr <- tab.bin[2,]  / sqrt(tab.bin[3,])
+for(j in 1:9){
+  ci.lo <- tab.bin[1,j] - 2 * stderr[j]
+  ci.up <- tab.bin[1,j] + 2 * stderr[j]
+  lines(x = rep(agemid[j], 2), y = c(ci.lo, ci.up), lwd = 2)
+}
+```
+
+Note that the SE's are very small (because $n$ is rather large), so the 95% CI at each point is narrow.
+
+Here is how to do the same thing with polygons instead of lines
+```{r poly.ci.table.self.age}
+plot(agemid, tab.bin[1,], t = "n", lwd = 2, 
+     pch = 0, col = "black", 
+     xlim = c(10, 80), ylim = c(20, 35), 
+     xlab = "Age", ylab = "Self-Esteem",
+     main = "Average Self-Esteem by (Binned) Age with 95% CI")
+ci.lo <- tab.bin[1,] - 2 * stderr
+ci.up <- tab.bin[1,] + 2 * stderr
+xpoly <- c(agemid, rev(agemid))
+ypoly <- c(ci.lo, rev(ci.up))
+trangray <- rgb(t(col2rgb("gray") / 255), alpha = 0.5)
+polygon(xpoly, ypoly, col = trangray, border = NA)
+lines(agemid, tab.bin[1,], pch = 0, col = "black", t = "b", lwd = 2)
+```
+
+
+
+## Table Self-Esteem by Age and Gender
+We can also table the results by gender and age via an extension of our previous code
+```{r  table.self.gen.age}
+# number of subjects for each gender*age
+nsubj <- with(rse1080, tapply(total, list(gender, agebin), length))
+colnames(nsubj) <- binlab
+
+# mean of total for each gender*age
+selfageMN <- with(rse1080, tapply(total, list(gender, agebin), mean))
+colnames(selfageMN) <- binlab
+
+# standard deviation of total for each gender*age
+selfageSD <- with(rse1080, tapply(total, list(gender, agebin), sd))
+colnames(selfageSD) <- binlab
+
+# combine (rowwise) into table for males
+tab.selfageM <- rbind(Mean = selfageMN[1,], SD = selfageSD[1,], N = nsubj[1,])
+rownames(tab.selfageM) <- paste0("male.", rownames(tab.selfageM))
+
+# combine (rowwise) into table for females
+tab.selfageF <- rbind(Mean = selfageMN[2,], SD = selfageSD[2,], N = nsubj[2,])
+rownames(tab.selfageF) <- paste0("female.", rownames(tab.selfageF))
+
+# combine (rowwise) into table for other
+tab.selfageO <- rbind(Mean = selfageMN[3,], SD = selfageSD[3,], N = nsubj[3,])
+rownames(tab.selfageO) <- paste0("other.", rownames(tab.selfageO))
+
+# combine (rowwise) into single table
+tab.selfage <- rbind(tab.selfageM, tab.selfageF, tab.selfageO)
+write.csv(round(tab.selfage, 2), file = paste0(getwd(), "/tab_selfage.csv"))
+round(tab.selfage, 1)
+```
+
+As before, we can (and should!) plot the results in the table to confirm things look reasonable
+```{r plot.table.self.gen.age}
+plot(agemid, tab.selfageM[1,], t = "b", lwd = 2, col = "blue",
+     xlim = c(10, 80), ylim = c(10, 35), 
+     xlab = "Age", ylab = "Self-Esteem",
+     main = "Average Self-Esteem by (Binned) Age and Gender")
+lines(agemid, tab.selfageF[1,], t = "b", 
+      pch = 2, lty = 2, lwd = 2, col = "red")
+lines(agemid, tab.selfageO[1,], t = "b", 
+      pch = 3, lty = 3, lwd = 2, col = "purple")
+legend("bottomright", legend = c("male", "female", "other"),
+       pch = 1:3, lty = 1:3, lwd = 2, 
+       col = c("blue", "red", "purple"), bty = "n")
+```
+
+
+# Data Analysis
+
+## t-Test of Self-Esteem: Males vs Females
+Suppose that we want to test the null hypothesis that males and females have the same mean level of self-esteem, versus the alternative hypothesis that males have higher mean levels of self-esteem compared to females.
+
+To test the null hypothesis $H_0: \mu_M = \mu_F$ versus the alternative hypothesis $H_1: \mu_M > \mu_F$, we can use the `t.test` function in R:
+```{r t.test.self}
+tt.self <- t.test(x = rse1080$total[indxM], 
+                  y = rse1080$total[indxF],
+                  alternative = "greater")
+tt.self
+```
+
+Note that the output object `tt.self` contains all of the information needed for inference.
+```{r t.test.self.names}
+names(tt.self)
+```
+
+Each of the (named) elements of `tt.self` contains a piece of information that can be extracted via the `$` symbol. For example
+```{r t.test.self.stat}
+tt.self$statistic
+```
+
+
+Instead of copy-pasting the information from the R printout, you should combine the needed information into a table, and export the table (similar to what we did before). For example:
+```{r t.test.output}
+tt.tab <- with(tt.self, data.frame(H1 = alternative,
+                                   t = round(statistic, 2), 
+                                   df = round(parameter, 2), 
+                                   p = round(p.value, 4), 
+                                   row.names = 1))
+write.csv(tt.tab, file = paste0(getwd(), "/tab_ttest.csv"))
+tt.tab
+```
+
+## Simple Linear Regression
+Suppose that we want to fit a simple linear regression model predicting self-esteem from age (ignoring gender).
+
+Linear models are fit via the `lm` function in R, which uses forumlaic syntax to express the model form:
+```{r lm.age}
+age.mod <- lm(total ~ age, data = rse1080)
+age.mod
+```
+
+Note that summarizing the fit model (via the `summary` function) provides information about the fit model. 
+
+```{r lm.age.sum}
+age.mod.sum <- summary(age.mod)
+age.mod.sum
+```
+
+In particular, you may be interested in exporting the coefficients table:
+```{r coef.lm.age}
+write.csv(round(age.mod.sum$coef, 4), 
+          file = paste0(getwd(), "/tab_coef.csv"))
+```
+
+
+To plot the estimated regression line, we can use the `abline` function
+```{r plot.lm.age}
+plot(agemid, tab.bin[1,], lwd = 2, col = "black",
+     xlim = c(10, 80), ylim = c(20, 35),
+     xlab = "Age", ylab = "Self-Esteem",
+     main = "Self-Esteem by Age")
+abline(age.mod$coef, lwd = 2)
+lines(ss, lty = 2, lwd = 2)
+legend("bottomright", legend = c("Avg", "Linear", "Smooth"),
+       pch = c(1, NA, NA), lty = c(NA, 1, 2), lwd = 2, bty = "n")
+```
+
+Note the average data and the smoothing spline solution are added for reference. Also, note that the simple linear regression line does **not** seem to be doing a good job of capturing the non-linear trends, particularly at the younger ages.
+
+
+## Multiple Linear Regression
+Suppose that we want to fit a multiple linear regression model predicting self-esteem from age and gender.
+
+Again, we will use the `lm` function to fit the model (because this is still a linear model). 
+```{r lm.age.gen}
+agegen.mod <- lm(total ~ age * gender, data = rse1080)
+agegen.mod.sum <- summary(agegen.mod)
+agegen.mod.sum
+```
+
+
+To plot the estimated regression lines, we can still use the `abline` function. But this time we have to make sure that we input the appropriate coefficients for each line...
+```{r plot.lm.age.gen}
+# plot males
+plot(agemid, tab.selfageM[1,], lwd = 2, col = "blue",
+     xlim = c(10, 80), ylim = c(10, 35), 
+     xlab = "Age", ylab = "Self-Esteem",
+     main = "Average Self-Esteem by Age and Gender")
+abline(a = agegen.mod$coef[1],
+       b = agegen.mod$coef[2],
+       lwd = 2, col = "blue")
+
+# add females
+points(agemid, tab.selfageF[1,],  
+       pch = 2, lwd = 2, col = "red")
+abline(a = agegen.mod$coef[1] + agegen.mod$coef[3],
+       b = agegen.mod$coef[2] + agegen.mod$coef[5], 
+       lty = 2, lwd = 2, col = "red")
+
+# add others
+points(agemid, tab.selfageO[1,], 
+       pch = 3, lwd = 2, col = "purple")
+abline(a = agegen.mod$coef[1] + agegen.mod$coef[4],
+       b = agegen.mod$coef[2] + agegen.mod$coef[6], 
+       lty = 3, lwd = 2, col = "purple")
+
+# add legend
+legend("bottomright", legend = c("male", "female", "other"),
+       pch = 1:3, lty = 1:3, lwd = 2, 
+       col = c("blue", "red", "purple"), bty = "n")
+```
+
+Note that the linear regression lines do **not** seem to be doing a good job of capturing the non-linear trends for each gender.
+
+
+## Regression with Polynomial Terms
+
+Suppose that we want to fit a similar model, but allowing for polynomial effects of age. Again, we will use the `lm` function to fit the model (because this is still a linear model), but this time we will use the `poly` function to create polynomials of degree 3, i.e., we are including linear, quadratic, and cubic effects of age.
+```{r lm.age.gen.poly}
+poly.mod <- lm(total ~ poly(age, degree = 3) * gender, data = rse1080)
+poly.mod.sum <- summary(poly.mod)
+```
+
+Let's plot the results:
+```{r plot.lm.age.gen.poly}
+# plot males
+plot(agemid, tab.selfageM[1,], lwd = 2, col = "blue",
+     xlim = c(10, 80), ylim = c(10, 35), 
+     xlab = "Age", ylab = "Self-Esteem",
+     main = "Average Self-Esteem by Age and Gender")
+newdata <- data.frame(age = 10:80, gender = "male")
+fit <- predict(poly.mod, newdata = newdata)
+lines(newdata$age, fit, lwd = 2, col = "blue")
+
+# add females
+points(agemid, tab.selfageF[1,],  
+       pch = 2, lwd = 2, col = "red")
+newdata <- data.frame(age = 10:80, gender = "female")
+fit <- predict(poly.mod, newdata = newdata)
+lines(newdata$age, fit, lty = 2, lwd = 2, col = "red")
+
+# add others
+points(agemid, tab.selfageO[1,], 
+       pch = 3, lwd = 2, col = "purple")
+newdata <- data.frame(age = 10:80, gender = "other")
+fit <- predict(poly.mod, newdata = newdata)
+lines(newdata$age, fit, lty = 3, lwd = 2, col = "purple")
+
+# add legend
+legend("bottomright", legend = c("male", "female", "other"),
+       pch = 1:3, lty = 1:3, lwd = 2, 
+       col = c("blue", "red", "purple"), bty = "n")
+```
+
+Note that even after including the quadratic and cubic effects of age, we are still **not** doing a good job of capturing the nonlinear trends in the data...
+
+
+## Nonparametric Regression
+To capture the nonlinear relationships in the data, we will use the `mgcv` package to fit a Generalized Additive Model (GAM). Note that a GAM is similar to a Smoothing Spline ANOVA (SSANOVA) model, which was used by Helwig and Ruprecht (2017) to analyze these data. 
+
+To fit the GAM, we will use the `gam` function, which works somewhat like the `lm` function.
+```{r mgcv}
+library(mgcv)
+gmod <- gam(total ~ gender + s(age, k = 20, by = gender), data = rse1080)
+```
+
+Note that the `s()` function indicates that we want a smooth effect (i.e., nonparametric basis) for the `age` effect. The `k` option tells the function to use 20 "knot" values, and the `by` option tells the function that the smooth effect of age should be allowed to differ for each `gender`.
+
+We could summarize the `lm` object similar to how we summarized the `gam` object:
+
+```{r mgcv.summary}
+summary(gmod)
+```
+
+Note that the summary provides some (pseudo) significance testing information, which is not too relevant for our current purpose. 
+
+
+What we really want is a visualization of the function estimates (along with the uncertainty of the estimates), which we can obtain by plotting the results:
+
+```{r plot.mgcv}
+# plot males
+newdata <- data.frame(age = 10:80, gender = "male")
+fit <- predict(gmod, newdata = newdata, se.fit = TRUE)
+plot(newdata$age, fit$fit, t = "n", lwd = 2, col = "blue",
+     xlim = c(10, 80), ylim = c(15, 35), 
+     xlab = "Age", ylab = "Self-Esteem",
+     main = "Average Self-Esteem by Age and Gender")
+ci.lo <- fit$fit - 2 * fit$se.fit
+ci.up <- fit$fit + 2 * fit$se.fit
+xpoly <- c(newdata$age, rev(newdata$age))
+ypoly <- c(ci.lo, rev(ci.up))
+polygon(xpoly, ypoly, 
+        col = rgb(t(col2rgb("cyan") / 255), alpha = 0.5),
+        border = NA)
+lines(newdata$age, fit$fit, lwd = 2, col = "blue")
+
+# add females
+newdata <- data.frame(age = 10:80, gender = "female")
+fit <- predict(gmod, newdata = newdata, se.fit = TRUE)
+ci.lo <- fit$fit - 2 * fit$se.fit
+ci.up <- fit$fit + 2 * fit$se.fit
+xpoly <- c(newdata$age, rev(newdata$age))
+ypoly <- c(ci.lo, rev(ci.up))
+polygon(xpoly, ypoly, 
+        col = rgb(t(col2rgb("pink") / 255), alpha = 0.5),
+        border = NA)
+lines(newdata$age, fit$fit, lty = 2, lwd = 2, col = "red")
+
+# add others
+newdata <- data.frame(age = 10:80, gender = "other")
+fit <- predict(gmod, newdata = newdata, se.fit = TRUE)
+ci.lo <- fit$fit - 2 * fit$se.fit
+ci.up <- fit$fit + 2 * fit$se.fit
+xpoly <- c(newdata$age, rev(newdata$age))
+ypoly <- c(ci.lo, rev(ci.up))
+polygon(xpoly, ypoly, 
+        col = rgb(t(col2rgb("lavender") / 255), alpha = 0.5),
+        border = NA)
+lines(newdata$age, fit$fit, lty = 3, lwd = 2, col = "purple")
+
+# add legend
+legend("bottomright", legend = c("male", "female", "other"),
+       lty = 1:3, lwd = 2, col = c("blue", "red", "purple"), bty = "n")
+
+# export figure (to pdf file)
+dev.copy2pdf(file = paste0(getwd(), "/fig_gam.pdf"))
+```
+
+
+## Convert .RMD File to .R File
+As a final step, we may want to create an R script file (i.e., .R extension) to replicate our analyses. To convert this (.RMD) file into an R script file, we can use the following code
+
+knitr::purl("ReproducibleCode.Rmd", documentation = 0)
+
+which calls the `purl` function from the **knitr** package. This will produce an R script file containing all of the executable R code (and comments) in this document.
